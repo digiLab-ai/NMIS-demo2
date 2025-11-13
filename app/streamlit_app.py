@@ -13,12 +13,35 @@ if str(ROOT_DIR) not in sys.path:
 from src.config import BRAND, CONFIG
 from src.data import generate_dataset
 from src.utils import msll
+from src.constants import SPECIES_COLORS, SPECIES_LABELS
 
 import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 
 st.set_page_config(page_title="Cryo Isotope GP Emulator", page_icon="❄️", layout="wide")
+
+ASSETS_DIR = ROOT_DIR / "assets"
+HERO_PATH = ASSETS_DIR / "CryoDistil.png"
+SIDEBAR_LOGO = ASSETS_DIR / "digilab.png"
+
+def set_base_font():
+    st.markdown(
+        """
+        <style>
+        html, body, .stApp {
+            font-family: "Helvetica Neue", Arial, sans-serif;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+set_base_font()
+
+# Hero image (scaled down to ~33% width)
+if HERO_PATH.exists():
+    st.image(str(HERO_PATH), caption="Cryogenic distillation emulator overview", width=420)
 
 st.title("❄️ Cryogenic Isotope Separation — GP Emulator Demo")
 st.caption("Fake-CFD synthetic dataset • CSV downloads • Visualisation • Upload-your-GP validation")
@@ -44,8 +67,11 @@ LHS over (P, T, feed) → smooth separation strength S(P, T) → apply effective
     )
 
 # Sidebar
+if SIDEBAR_LOGO.exists():
+    st.sidebar.image(str(SIDEBAR_LOGO), use_container_width=True)
+
 st.sidebar.header("Settings")
-n_samples = st.sidebar.number_input("Number of samples", min_value=50, max_value=5000, value=CONFIG.default_samples, step=50)
+n_samples = st.sidebar.number_input("Number of samples", min_value=1, max_value=1000, value=CONFIG.default_samples, step=50)
 seed = st.sidebar.number_input("Random seed", min_value=0, max_value=10_000, value=CONFIG.seed, step=1)
 train_frac = st.sidebar.slider("Train fraction", min_value=0.5, max_value=0.95, value=float(CONFIG.train_fraction), step=0.05)
 
@@ -101,12 +127,16 @@ with tab_data:
     row_input = X.iloc[idx]
     c_feed, c_top, c_delta = st.columns(3)
     with c_feed:
+        feed_values = [row_detail.feed_H2, row_detail.feed_D2, row_detail.feed_T2]
+        feed_labels = [SPECIES_LABELS["H2"], SPECIES_LABELS["D2"], SPECIES_LABELS["T2"]]
+        feed_colors = [SPECIES_COLORS["H2"], SPECIES_COLORS["D2"], SPECIES_COLORS["T2"]]
         fig_feed = px.pie(
-            values=[row_detail.feed_H2, row_detail.feed_D2, row_detail.feed_T2],
-            names=["H2", "D2", "T2"],
+            values=feed_values,
+            names=feed_labels,
             hole=0.35,
             title=f"Feed Split (sample {idx})",
         )
+        fig_feed.update_traces(marker=dict(colors=feed_colors))
         fig_feed.update_traces(textposition="inside", textinfo="percent+label")
         st.plotly_chart(fig_feed, use_container_width=True)
         st.markdown(
@@ -114,19 +144,24 @@ with tab_data:
             unsafe_allow_html=True,
         )
     with c_top:
+        top_values = [row_detail.y_top_H2, row_detail.y_top_D2, row_detail.y_top_T2]
+        top_labels = feed_labels
         fig_top = px.pie(
-            values=[row_detail.y_top_H2, row_detail.y_top_D2, row_detail.y_top_T2],
-            names=["H2", "D2", "T2"],
+            values=top_values,
+            names=top_labels,
             hole=0.35,
             title=f"Top Split (sample {idx})",
         )
+        fig_top.update_traces(marker=dict(colors=feed_colors))
         fig_top.update_traces(textposition="inside", textinfo="percent+label")
         st.plotly_chart(fig_top, use_container_width=True)
     with c_delta:
         fig_delta = px.bar(
-            x=["H2", "D2", "T2"],
+            x=feed_labels,
             y=[row_delta.delta_top_H2, row_delta.delta_top_D2, row_delta.delta_top_T2],
             title=f"Delta (top - feed) (sample {idx})",
+            color=feed_labels,
+            color_discrete_map={label: color for label, color in zip(feed_labels, feed_colors)},
         )
         fig_delta.update_layout(yaxis_title="Fraction change", xaxis_title="")
         st.plotly_chart(fig_delta, use_container_width=True)

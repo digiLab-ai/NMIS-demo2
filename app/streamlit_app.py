@@ -1,0 +1,288 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+from sklearn.metrics import r2_score
+from pathlib import Path
+import sys
+
+# Ensure the repository root is importable so `src` works even when run from app/
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from src.config import BRAND, CONFIG
+from src.data import generate_dataset
+from src.utils import msll
+
+import plotly.express as px
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
+
+st.set_page_config(page_title="Cryo Isotope GP Emulator", page_icon="❄️", layout="wide")
+
+st.title("❄️ Cryogenic Isotope Separation — GP Emulator Demo")
+st.caption("Fake-CFD synthetic dataset • CSV downloads • Visualisation • Upload-your-GP validation")
+
+with st.expander("What does this generator do? (click to expand)"):
+    st.markdown(
+        """
+**Purpose.** Generate a synthetic ("fake-CFD") dataset for a cryogenic **hydrogen isotope** distillation segment:
+inputs → product fraction shifts. Use the CSVs to train GP emulators elsewhere, then upload their predictions here for validation.
+
+**Inputs (X).**
+- `P_kPa` — Column pressure (kPa) | range: 60–300
+- `T_K` — Column temperature (K) | range: 18–35
+- `x_H2`, `x_D2`, `x_T2` — Feed fractions (sum = 1)
+
+**Outputs (Y).**
+- `delta_top_*` — Change in top product fraction vs feed (`top - feed`) for H₂/D₂/T₂
+
+**How it works.**
+LHS over (P, T, feed) → smooth separation strength S(P, T) → apply effective volatilities biased by feed mix → return
+`Delta(top-feed)` plus the detailed feed/top compositions for visualisation.
+        """
+    )
+
+# Sidebar
+st.sidebar.header("Settings")
+n_samples = st.sidebar.number_input("Number of samples", min_value=50, max_value=5000, value=CONFIG.default_samples, step=50)
+seed = st.sidebar.number_input("Random seed", min_value=0, max_value=10_000, value=CONFIG.seed, step=1)
+train_frac = st.sidebar.slider("Train fraction", min_value=0.5, max_value=0.95, value=float(CONFIG.train_fraction), step=0.05)
+
+# Generate
+X, Y, details = generate_dataset(n_samples=int(n_samples), seed=int(seed), return_details=True)
+
+# Train/validation split (deterministic for given seed)
+rng = np.random.default_rng(int(seed))
+indices = rng.permutation(len(X))
+if len(X) < 2:
+    train_idx = indices
+    val_idx = indices
+else:
+    n_train = int(round(train_frac * len(X)))
+    n_train = min(max(n_train, 1), len(X) - 1)
+    train_idx = indices[:n_train]
+    val_idx = indices[n_train:]
+
+def take_rows(df, idx):
+    return df.iloc[idx].reset_index(drop=True)
+
+X_train, X_val = take_rows(X, train_idx), take_rows(X, val_idx)
+Y_train, Y_val = take_rows(Y, train_idx), take_rows(Y, val_idx)
+
+def csv_bytes(df):
+    return df.to_csv(index=False).encode("utf-8")
+
+# Tabs
+tab_data, tab_validate = st.tabs(["Data & Downloads", "Validation"])
+
+with tab_data:
+    st.subheader("Dataset previews")
+    st.caption(f"Train samples: **{len(X_train)}** • Validation samples: **{len(X_val)}** (seeded shuffle)")
+    col_in, col_out = st.columns(2)
+    with col_in:
+        st.markdown("**Inputs (P, T, feed)**")
+        with st.expander("Show first 20 rows", expanded=False):
+            st.dataframe(X.head(20), use_container_width=True)
+        st.download_button("Download train inputs (train_X.csv)", csv_bytes(X_train), file_name="train_inputs.csv")
+        st.download_button("Download validation inputs (val_X.csv)", csv_bytes(X_val), file_name="validation_inputs.csv")
+    with col_out:
+        st.markdown("**Outputs (delta_top)**")
+        with st.expander("Show first 20 rows", expanded=False):
+            st.dataframe(Y.head(20), use_container_width=True)
+        st.download_button("Download train outputs (train_Y.csv)", csv_bytes(Y_train), file_name="train_outputs.csv")
+        st.download_button("Download validation outputs (val_Y.csv)", csv_bytes(Y_val), file_name="validation_outputs.csv")
+
+    st.markdown("---")
+    st.subheader("Per-sample composition explorer")
+    idx = st.slider("Sample index", 0, len(Y) - 1, 0, 1)
+    row_delta = Y.iloc[idx]
+    row_detail = details.iloc[idx]
+    row_input = X.iloc[idx]
+    c_feed, c_top, c_delta = st.columns(3)
+    with c_feed:
+        fig_feed = px.pie(
+            values=[row_detail.feed_H2, row_detail.feed_D2, row_detail.feed_T2],
+            names=["H2", "D2", "T2"],
+            hole=0.35,
+            title=f"Feed Split (sample {idx})",
+        )
+        fig_feed.update_traces(textposition="inside", textinfo="percent+label")
+        st.plotly_chart(fig_feed, use_container_width=True)
+        st.markdown(
+            f"**Pressure:** {row_input.P_kPa:.1f} kPa<br>**Temperature:** {row_input.T_K:.1f} K",
+            unsafe_allow_html=True,
+        )
+    with c_top:
+        fig_top = px.pie(
+            values=[row_detail.y_top_H2, row_detail.y_top_D2, row_detail.y_top_T2],
+            names=["H2", "D2", "T2"],
+            hole=0.35,
+            title=f"Top Split (sample {idx})",
+        )
+        fig_top.update_traces(textposition="inside", textinfo="percent+label")
+        st.plotly_chart(fig_top, use_container_width=True)
+    with c_delta:
+        fig_delta = px.bar(
+            x=["H2", "D2", "T2"],
+            y=[row_delta.delta_top_H2, row_delta.delta_top_D2, row_delta.delta_top_T2],
+            title=f"Delta (top - feed) (sample {idx})",
+        )
+        fig_delta.update_layout(yaxis_title="Fraction change", xaxis_title="")
+        st.plotly_chart(fig_delta, use_container_width=True)
+
+with tab_validate:
+    st.subheader("Upload GP results for validation")
+    st.markdown(
+        """
+Upload **three CSV files** generated elsewhere:
+1) **Ground truth** (`Y_true.csv`) — must include at least one of: `delta_top_*`  
+2) **Predictions** (`Y_pred.csv`) — same column names as ground truth for the selected target  
+3) **Uncertainty** (`Y_std.csv`) — **standard deviation** per row for the selected target (same shape)
+
+        """
+    )
+    true_file = st.file_uploader("Ground truth CSV", type=["csv"], key="true")
+    pred_file = st.file_uploader("Prediction CSV", type=["csv"], key="pred")
+    std_file  = st.file_uploader("Uncertainty CSV (std or var)", type=["csv"], key="std")
+
+    if true_file and pred_file and std_file:
+        Yt = pd.read_csv(true_file)
+        Yp = pd.read_csv(pred_file)
+        Yu = pd.read_csv(std_file)
+
+        outputs = ["delta_top_H2","delta_top_D2","delta_top_T2"]
+        candidates = [c for c in outputs if c in Yt.columns and c in Yp.columns]
+        if not candidates:
+            st.error("No common output columns found between ground truth and prediction CSVs.")
+        else:
+            st.markdown("**Confidence interval(s) to display**")
+            ci_defs = [
+                ("68% CI", 1.0, 1.2, 2, "≈±1σ"),
+                ("95% CI", 1.96, 2.0, 3, "Default (≈±1.96σ)"),
+                ("99% CI", 2.576, 2.6, 4, "≈±2.58σ"),
+            ]
+            ci_cols = st.columns(len(ci_defs))
+            selected_cis = []
+            for ci_idx, (label, z_score, thickness, width, hint) in enumerate(ci_defs):
+                with ci_cols[ci_idx]:
+                    checked = st.checkbox(
+                        label,
+                        value=(label == "95% CI"),
+                        key=f"ci_{label.replace('%','')}",
+                        help=hint,
+                    )
+                if checked:
+                    selected_cis.append((label, z_score, thickness, width))
+            if not selected_cis:
+                # Fallback to 95% CI if user unchecks everything
+                selected_cis.append(ci_defs[1][:4])
+            numeric_cols = Yu.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) == 0:
+                st.error("No numeric columns in uncertainty CSV."); st.stop()
+
+            metrics = []
+            series = {}
+            fallback_std = Yu[numeric_cols[0]].to_numpy().astype(float)
+
+            for col in candidates:
+                y_true = Yt[col].to_numpy().astype(float)
+                y_pred = Yp[col].to_numpy().astype(float)
+                if col in Yu.columns:
+                    y_std = Yu[col].to_numpy().astype(float)
+                else:
+                    y_std = fallback_std.copy()
+
+                n = min(len(y_true), len(y_pred), len(y_std))
+                y_true, y_pred, y_std = y_true[:n], y_pred[:n], y_std[:n]
+
+                metrics.append(
+                    {
+                        "Output": col,
+                        "R²": r2_score(y_true, y_pred),
+                        "MSLL": msll(y_true, y_pred, y_std),
+                    }
+                )
+                series[col] = (y_true, y_pred, y_std)
+
+            metrics_df = pd.DataFrame(metrics)
+            st.dataframe(metrics_df, use_container_width=True, hide_index=True)
+
+            fig = make_subplots(rows=1, cols=len(candidates), subplot_titles=candidates)
+            for idx, col in enumerate(candidates, start=1):
+                y_true, y_pred, y_std = series[col]
+                diag_min = float(np.min(np.concatenate([y_true, y_pred])))
+                diag_max = float(np.max(np.concatenate([y_true, y_pred])))
+                pad = 0.05 * (diag_max - diag_min) if diag_max > diag_min else 0.05
+                diag_min -= pad
+                diag_max += pad
+                fig.add_trace(
+                    go.Scatter(
+                        x=y_true,
+                        y=y_pred,
+                        mode="markers",
+                        marker=dict(size=7, color=BRAND.INDIGO, opacity=0.85),
+                        showlegend=False,
+                    ),
+                    row=1,
+                    col=idx,
+                )
+                for ci_label, z_score, thickness, width in selected_cis:
+                    yerr = z_score * np.clip(y_std, 0.0, None)
+                    fig.add_trace(
+                        go.Scatter(
+                            x=y_true,
+                            y=y_pred,
+                            mode="markers",
+                            marker=dict(size=0.1, color="rgba(0,0,0,0)"),
+                            error_y=dict(
+                                type="data",
+                                array=yerr,
+                                thickness=thickness,
+                                width=width,
+                                color=BRAND.INDIGO,
+                            ),
+                            showlegend=(idx == 1),
+                            name=ci_label,
+                            hoverinfo="skip",
+                        ),
+                        row=1,
+                        col=idx,
+                    )
+                fig.add_trace(
+                    go.Scatter(
+                        x=[diag_min, diag_max],
+                        y=[diag_min, diag_max],
+                        mode="lines",
+                        line=dict(color=BRAND.LIGHT_GREY, dash="dash"),
+                        showlegend=False,
+                    ),
+                    row=1,
+                    col=idx,
+                )
+                fig.add_shape(
+                    type="line",
+                    x0=diag_min,
+                    y0=0,
+                    x1=diag_max,
+                    y1=0,
+                    line=dict(color=BRAND.LIGHT_GREY, dash="dot"),
+                    row=1,
+                    col=idx,
+                )
+                fig.add_shape(
+                    type="line",
+                    x0=0,
+                    y0=diag_min,
+                    x1=0,
+                    y1=diag_max,
+                    line=dict(color=BRAND.LIGHT_GREY, dash="dot"),
+                    row=1,
+                    col=idx,
+                )
+                fig.update_xaxes(title_text="Ground truth", range=[diag_min, diag_max], row=1, col=idx)
+                fig.update_yaxes(title_text="Prediction", range=[diag_min, diag_max], scaleanchor=f"x{idx}", scaleratio=1, row=1, col=idx)
+            fig.update_layout(height=450, margin=dict(t=60, l=20, r=20, b=20))
+            st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Waiting for all three CSVs...")

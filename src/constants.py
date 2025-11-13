@@ -8,6 +8,12 @@ RANGES = {
 }
 
 SPECIES = ["H2", "D2", "T2"]
+SPECIES_LABELS = {"H2": "H", "D2": "D", "T2": "T"}
+SPECIES_COLORS = {
+    "H2": "#C0F1EC",
+    "D2": "#BBe7B2",
+    "T2": "#8FBFBB",
+}
 
 def clamp01(x: np.ndarray) -> np.ndarray:
     return np.clip(x, 0.0, 1.0)

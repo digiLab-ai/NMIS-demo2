@@ -13,6 +13,7 @@ if str(ROOT_DIR) not in sys.path:
 from src.config import BRAND, CONFIG
 from src.data import generate_dataset
 from src.utils import msll
+from src.constants import SPECIES_COLORS, SPECIES_LABELS
 
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -20,8 +21,30 @@ import plotly.graph_objects as go
 
 st.set_page_config(page_title="Cryo Isotope GP Emulator", page_icon="❄️", layout="wide")
 
-st.title("❄️ Cryogenic Isotope Separation — GP Emulator Demo")
-st.caption("Fake-CFD synthetic dataset • CSV downloads • Visualisation • Upload-your-GP validation")
+ASSETS_DIR = ROOT_DIR / "assets"
+HERO_PATH = ASSETS_DIR / "CryoDistil.png"
+SIDEBAR_LOGO = ASSETS_DIR / "digilab.png"
+
+def set_base_font():
+    st.markdown(
+        """
+        <style>
+        html, body, .stApp {
+            font-family: "Helvetica Neue", sans-serif;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+set_base_font()
+
+
+st.title("❄️ Cryogenic Isotope Distillation Simulator")
+st.caption("")
+# Hero image (scaled down to ~33% width)
+if HERO_PATH.exists():
+    st.image(str(HERO_PATH), caption="Cryogenic distillation emulator overview", width=600)
 
 with st.expander("What does this generator do? (click to expand)"):
     st.markdown(
@@ -32,20 +55,29 @@ inputs → product fraction shifts. Use the CSVs to train GP emulators elsewhere
 **Inputs (X).**
 - `P_kPa` — Column pressure (kPa) | range: 60–300
 - `T_K` — Column temperature (K) | range: 18–35
-- `x_H2`, `x_D2`, `x_T2` — Feed fractions (sum = 1)
+- `feed_H`, `feed_D`, `feed_T` — Feed fractions (sum = 1)
 
 **Outputs (Y).**
-- `delta_top_*` — Change in top product fraction vs feed (`top - feed`) for H₂/D₂/T₂
+- `delta_*` — Change in top product fraction vs feed (`top - feed`) for H/D/T
 
 **How it works.**
-LHS over (P, T, feed) → smooth separation strength S(P, T) → apply effective volatilities biased by feed mix → return
-`Delta(top-feed)` plus the detailed feed/top compositions for visualisation.
+- Specify the desired number of samples and random seed.
+- The app will generate a Latin hypercube sample (LHS) of the inputs within specified ranges.
+- The mock-CFD simulation will run for each sample input and generate the top and bottom isotope fractions.
+- The user specifies the train/validation split fraction.
+- The app displays previews of the generated input/output datasets and allows CSV downloads.
+- These CSV downloads can be used to train a model in the Uncertainty Engine.
+- The model can be used on the validation inputs.
+- The validation tab can be used to compare the ground truth (validation outputs, `val_Y.csv`) vs the model predictions and uncertainties.
         """
     )
 
 # Sidebar
+if SIDEBAR_LOGO.exists():
+    st.sidebar.image(str(SIDEBAR_LOGO), use_container_width=True)
+
 st.sidebar.header("Settings")
-n_samples = st.sidebar.number_input("Number of samples", min_value=50, max_value=5000, value=CONFIG.default_samples, step=50)
+n_samples = st.sidebar.number_input("Number of samples", min_value=1, max_value=1000, value=CONFIG.default_samples, step=50)
 seed = st.sidebar.number_input("Random seed", min_value=0, max_value=10_000, value=CONFIG.seed, step=1)
 train_frac = st.sidebar.slider("Train fraction", min_value=0.5, max_value=0.95, value=float(CONFIG.train_fraction), step=0.05)
 
@@ -84,14 +116,14 @@ with tab_data:
         st.markdown("**Inputs (P, T, feed)**")
         with st.expander("Show first 20 rows", expanded=False):
             st.dataframe(X.head(20), use_container_width=True)
-        st.download_button("Download train inputs (train_X.csv)", csv_bytes(X_train), file_name="train_inputs.csv")
-        st.download_button("Download validation inputs (val_X.csv)", csv_bytes(X_val), file_name="validation_inputs.csv")
+        st.download_button("Download train inputs (train_X.csv)", csv_bytes(X_train), file_name="train_X.csv")
+        st.download_button("Download validation inputs (val_X.csv)", csv_bytes(X_val), file_name="val_X.csv")
     with col_out:
-        st.markdown("**Outputs (delta_top)**")
+        st.markdown("**Outputs (delta)**")
         with st.expander("Show first 20 rows", expanded=False):
             st.dataframe(Y.head(20), use_container_width=True)
-        st.download_button("Download train outputs (train_Y.csv)", csv_bytes(Y_train), file_name="train_outputs.csv")
-        st.download_button("Download validation outputs (val_Y.csv)", csv_bytes(Y_val), file_name="validation_outputs.csv")
+        st.download_button("Download train outputs (train_Y.csv)", csv_bytes(Y_train), file_name="train_Y.csv")
+        st.download_button("Download validation outputs (val_Y.csv)", csv_bytes(Y_val), file_name="val_Y.csv")
 
     st.markdown("---")
     st.subheader("Per-sample composition explorer")
@@ -101,12 +133,16 @@ with tab_data:
     row_input = X.iloc[idx]
     c_feed, c_top, c_delta = st.columns(3)
     with c_feed:
+        feed_values = [row_detail.feed_H, row_detail.feed_D, row_detail.feed_T]
+        feed_labels = [SPECIES_LABELS["H2"], SPECIES_LABELS["D2"], SPECIES_LABELS["T2"]]
+        feed_colors = [SPECIES_COLORS["H2"], SPECIES_COLORS["D2"], SPECIES_COLORS["T2"]]
         fig_feed = px.pie(
-            values=[row_detail.feed_H2, row_detail.feed_D2, row_detail.feed_T2],
-            names=["H2", "D2", "T2"],
+            values=feed_values,
+            names=feed_labels,
             hole=0.35,
-            title=f"Feed Split (sample {idx})",
+            title="Feed Split",
         )
+        fig_feed.update_traces(marker=dict(colors=feed_colors))
         fig_feed.update_traces(textposition="inside", textinfo="percent+label")
         st.plotly_chart(fig_feed, use_container_width=True)
         st.markdown(
@@ -114,19 +150,24 @@ with tab_data:
             unsafe_allow_html=True,
         )
     with c_top:
+        top_values = [row_detail.y_top_H2, row_detail.y_top_D2, row_detail.y_top_T2]
+        top_labels = feed_labels
         fig_top = px.pie(
-            values=[row_detail.y_top_H2, row_detail.y_top_D2, row_detail.y_top_T2],
-            names=["H2", "D2", "T2"],
+            values=top_values,
+            names=top_labels,
             hole=0.35,
-            title=f"Top Split (sample {idx})",
+            title="Top Split",
         )
+        fig_top.update_traces(marker=dict(colors=feed_colors))
         fig_top.update_traces(textposition="inside", textinfo="percent+label")
         st.plotly_chart(fig_top, use_container_width=True)
     with c_delta:
         fig_delta = px.bar(
-            x=["H2", "D2", "T2"],
-            y=[row_delta.delta_top_H2, row_delta.delta_top_D2, row_delta.delta_top_T2],
-            title=f"Delta (top - feed) (sample {idx})",
+            x=feed_labels,
+            y=[row_delta.delta_H, row_delta.delta_D, row_delta.delta_T],
+            title="Delta (top - feed)",
+            color=feed_labels,
+            color_discrete_map={label: color for label, color in zip(feed_labels, feed_colors)},
         )
         fig_delta.update_layout(yaxis_title="Fraction change", xaxis_title="")
         st.plotly_chart(fig_delta, use_container_width=True)
@@ -136,9 +177,9 @@ with tab_validate:
     st.markdown(
         """
 Upload **three CSV files** generated elsewhere:
-1) **Ground truth** (`Y_true.csv`) — must include at least one of: `delta_top_*`  
-2) **Predictions** (`Y_pred.csv`) — same column names as ground truth for the selected target  
-3) **Uncertainty** (`Y_std.csv`) — **standard deviation** per row for the selected target (same shape)
+1) **Ground truth** (`val_Y.csv`)  
+2) **Predictions** (`pred_Y.csv`)
+3) **Uncertainty** (`std_Y.csv`)
 
         """
     )
@@ -151,7 +192,7 @@ Upload **three CSV files** generated elsewhere:
         Yp = pd.read_csv(pred_file)
         Yu = pd.read_csv(std_file)
 
-        outputs = ["delta_top_H2","delta_top_D2","delta_top_T2"]
+        outputs = ["delta_H","delta_D","delta_T"]
         candidates = [c for c in outputs if c in Yt.columns and c in Yp.columns]
         if not candidates:
             st.error("No common output columns found between ground truth and prediction CSVs.")
@@ -257,26 +298,6 @@ Upload **three CSV files** generated elsewhere:
                         line=dict(color=BRAND.LIGHT_GREY, dash="dash"),
                         showlegend=False,
                     ),
-                    row=1,
-                    col=idx,
-                )
-                fig.add_shape(
-                    type="line",
-                    x0=diag_min,
-                    y0=0,
-                    x1=diag_max,
-                    y1=0,
-                    line=dict(color=BRAND.LIGHT_GREY, dash="dot"),
-                    row=1,
-                    col=idx,
-                )
-                fig.add_shape(
-                    type="line",
-                    x0=0,
-                    y0=diag_min,
-                    x1=0,
-                    y1=diag_max,
-                    line=dict(color=BRAND.LIGHT_GREY, dash="dot"),
                     row=1,
                     col=idx,
                 )

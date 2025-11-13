@@ -41,20 +41,20 @@ def simulate_outputs(df_inputs: pd.DataFrame, seed: int = 42):
     delta_rows = []
     detail_rows = []
     for _, r in df_inputs.iterrows():
-        feed = np.array([r.x_H2, r.x_D2, r.x_T2], dtype=float)
+        feed = np.array([r.feed_H, r.feed_D, r.feed_T], dtype=float)
         S = separation_strength(r.P_kPa, r.T_K)
         alpha = effective_alpha(S, feed)
         y_top, _ = product_fractions(feed, alpha, noise_scale=0.0)
         delta = y_top - feed
         delta_rows.append({
-            "delta_top_H2": delta[0],
-            "delta_top_D2": delta[1],
-            "delta_top_T2": delta[2],
+            "delta_H": delta[0],
+            "delta_D": delta[1],
+            "delta_T": delta[2],
         })
         detail_rows.append({
-            "feed_H2": feed[0],
-            "feed_D2": feed[1],
-            "feed_T2": feed[2],
+            "feed_H": feed[0],
+            "feed_D": feed[1],
+            "feed_T": feed[2],
             "y_top_H2": y_top[0],
             "y_top_D2": y_top[1],
             "y_top_T2": y_top[2],

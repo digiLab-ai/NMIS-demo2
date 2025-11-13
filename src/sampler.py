@@ -20,7 +20,7 @@ def lhs_inputs(n_samples: int, seed: int = 42) -> pd.DataFrame:
 
     rng = np.random.default_rng(seed)
     feed = rng.dirichlet(alpha=[1.6, 1.3, 1.1], size=n_samples)
-    X["x_H2"] = feed[:, 0]
-    X["x_D2"] = feed[:, 1]
-    X["x_T2"] = feed[:, 2]
+    X["feed_H"] = feed[:, 0]
+    X["feed_D"] = feed[:, 1]
+    X["feed_T"] = feed[:, 2]
     return pd.DataFrame(X)

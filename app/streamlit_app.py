@@ -301,26 +301,6 @@ Upload **three CSV files** generated elsewhere:
                     row=1,
                     col=idx,
                 )
-                fig.add_shape(
-                    type="line",
-                    x0=diag_min,
-                    y0=0,
-                    x1=diag_max,
-                    y1=0,
-                    line=dict(color=BRAND.LIGHT_GREY, dash="dot"),
-                    row=1,
-                    col=idx,
-                )
-                fig.add_shape(
-                    type="line",
-                    x0=0,
-                    y0=diag_min,
-                    x1=0,
-                    y1=diag_max,
-                    line=dict(color=BRAND.LIGHT_GREY, dash="dot"),
-                    row=1,
-                    col=idx,
-                )
                 fig.update_xaxes(title_text="Ground truth", range=[diag_min, diag_max], row=1, col=idx)
                 fig.update_yaxes(title_text="Prediction", range=[diag_min, diag_max], scaleanchor=f"x{idx}", scaleratio=1, row=1, col=idx)
             fig.update_layout(height=450, margin=dict(t=60, l=20, r=20, b=20))

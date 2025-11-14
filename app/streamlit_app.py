@@ -13,7 +13,7 @@ if str(ROOT_DIR) not in sys.path:
 from src.config import BRAND, CONFIG
 from src.data import generate_dataset
 from src.utils import msll
-from src.constants import SPECIES_COLORS, SPECIES_LABELS
+from src.constants import SPECIES_COLORS, SPECIES_LABELS, RANGES
 
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -106,7 +106,7 @@ def csv_bytes(df):
     return df.to_csv(index=False).encode("utf-8")
 
 # Tabs
-tab_data, tab_validate = st.tabs(["Data & Downloads", "Validation"])
+tab_data, tab_validate, tab_vis = st.tabs(["Data & Downloads", "Validation", "Visualisation"])
 
 with tab_data:
     st.subheader("Dataset previews")
@@ -307,3 +307,44 @@ Upload **three CSV files** generated elsewhere:
             st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Waiting for all three CSVs...")
+
+with tab_vis:
+    st.subheader("Input mesh grid generator")
+    st.markdown(
+        f"""
+        **Parameter bounds**
+
+        - Pressure: {RANGES["P_kPa"][0]}–{RANGES["P_kPa"][1]} kPa
+        - Temperature: {RANGES["T_K"][0]}–{RANGES["T_K"][1]} K
+        - Feed fractions: H, D, T ∈ [0, 1] (no sum-to-one constraint)
+        """
+    )
+    p_steps = t_steps = feed_steps = 10
+    min_feed = 0.
+
+    def build_mesh():
+        p_vals = np.linspace(RANGES["P_kPa"][0], RANGES["P_kPa"][1], p_steps)
+        t_vals = np.linspace(RANGES["T_K"][0], RANGES["T_K"][1], t_steps)
+        feed_vals = np.linspace(0.0, 1.0, feed_steps)
+        rows = []
+        for P in p_vals:
+            for T in t_vals:
+                for fH in feed_vals:
+                    for fD in feed_vals:
+                        for fT in feed_vals:
+                            if min(fH, fD, fT) < min_feed:
+                                continue
+                            rows.append({"P_kPa": P, "T_K": T, "feed_H": fH, "feed_D": fD, "feed_T": fT})
+        return pd.DataFrame(rows)
+
+    mesh_df = build_mesh()
+    st.caption(f"Mesh with {p_steps} steps per dimension: **{len(mesh_df)}** combinations.")
+    st.dataframe(mesh_df.head(50), use_container_width=True)
+    if len(mesh_df) == 0:
+        st.warning("No valid combinations with current settings. Adjust the feed resolution or minimum component.")
+    else:
+        st.download_button(
+            "Download mesh grid (CSV)",
+            mesh_df.to_csv(index=False).encode("utf-8"),
+            file_name="mesh_grid_X.csv",
+        )

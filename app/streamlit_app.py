@@ -13,11 +13,16 @@ if str(ROOT_DIR) not in sys.path:
 from src.config import BRAND, CONFIG
 from src.data import generate_dataset
 from src.utils import msll
-from src.constants import SPECIES_COLORS, SPECIES_LABELS, RANGES, FEED_TOTAL_MOLES
+import src.constants as const
 
 import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
+
+SPECIES_COLORS = const.SPECIES_COLORS
+SPECIES_LABELS = const.SPECIES_LABELS
+RANGES = const.RANGES
+FEED_TOTAL_MOLES = getattr(const, "FEED_TOTAL_MOLES", (50.0, 200.0))
 
 st.set_page_config(page_title="Cryo Isotope GP Emulator", page_icon="❄️", layout="wide")
 

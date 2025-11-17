@@ -44,6 +44,20 @@ def set_base_font():
 
 set_base_font()
 
+def extract_feed_values(row):
+    return np.array([
+        row.get("feed_H", row.get("x_H2", 0.0)),
+        row.get("feed_D", row.get("x_D2", 0.0)),
+        row.get("feed_T", row.get("x_T2", 0.0)),
+    ], dtype=float)
+
+def extract_top_values(row):
+    return np.array([
+        row.get("top_H", row.get("y_top_H2", 0.0)),
+        row.get("top_D", row.get("y_top_D2", 0.0)),
+        row.get("top_T", row.get("y_top_T2", 0.0)),
+    ], dtype=float)
+
 
 st.title("❄️ Cryogenic Isotope Distillation Simulator")
 st.caption("")
@@ -141,7 +155,7 @@ with tab_data:
 
     c_feed, c_top, c_delta = st.columns(3)
     with c_feed:
-        feed_values = np.array([row_detail.feed_H, row_detail.feed_D, row_detail.feed_T], dtype=float)
+        feed_values = extract_feed_values(row_detail)
         feed_share = feed_values / feed_values.sum() if feed_values.sum() > 0 else np.ones(3) / 3
         fig_feed = px.pie(
             values=feed_share,
@@ -159,7 +173,7 @@ with tab_data:
             unsafe_allow_html=True,
         )
     with c_top:
-        top_values = np.array([row_detail.top_H, row_detail.top_D, row_detail.top_T], dtype=float)
+        top_values = extract_top_values(row_detail)
         top_share = top_values / top_values.sum() if top_values.sum() > 0 else np.ones(3) / 3
         fig_top = px.pie(
             values=top_share,

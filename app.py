@@ -5,8 +5,8 @@ from sklearn.metrics import r2_score
 from pathlib import Path
 import sys
 
-# Ensure the repository root is importable so `src` works even when run from app/
-ROOT_DIR = Path(__file__).resolve().parents[1]
+# Ensure the repository root is importable so `src` works even when run directly
+ROOT_DIR = Path(__file__).resolve().parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 

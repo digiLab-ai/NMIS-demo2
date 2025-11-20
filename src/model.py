@@ -52,7 +52,13 @@ def simulate_outputs(df_inputs: pd.DataFrame, seed: int = 42):
         alpha = effective_alpha(S, feed_frac)
         noise_scale = 0.01
         y_top, _ = product_fractions(feed_frac, alpha, noise_scale=noise_scale, rng=rng)
-        top_moles = y_top * total_moles
+        raw_top_moles = y_top * total_moles
+        top_moles = np.minimum(raw_top_moles, feed)
+        top_total = np.sum(top_moles)
+        if top_total > 0:
+            top_frac = top_moles / top_total
+        else:
+            top_frac = np.zeros_like(top_moles)
         delta = top_moles - feed
         delta_rows.append({
             "delta_H": delta[0],
@@ -66,9 +72,9 @@ def simulate_outputs(df_inputs: pd.DataFrame, seed: int = 42):
             "top_H": top_moles[0],
             "top_D": top_moles[1],
             "top_T": top_moles[2],
-            "top_frac_H": y_top[0],
-            "top_frac_D": y_top[1],
-            "top_frac_T": y_top[2],
+            "top_frac_H": top_frac[0],
+            "top_frac_D": top_frac[1],
+            "top_frac_T": top_frac[2],
             "S_eff": S,
         })
     return pd.DataFrame(delta_rows), pd.DataFrame(detail_rows)

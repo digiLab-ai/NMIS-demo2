@@ -53,7 +53,9 @@ def simulate_outputs(df_inputs: pd.DataFrame, seed: int = 42):
         noise_scale = 0.01
         y_top, _ = product_fractions(feed_frac, alpha, noise_scale=noise_scale, rng=rng)
         raw_top_moles = y_top * total_moles
-        top_moles = np.minimum(raw_top_moles, feed)
+        drawdown = rng.uniform(0.01, 0.08, size=3)
+        top_capacity = feed * np.clip(1.0 - drawdown, 0.0, 1.0)
+        top_moles = np.minimum(raw_top_moles, top_capacity)
         top_total = np.sum(top_moles)
         if top_total > 0:
             top_frac = top_moles / top_total
